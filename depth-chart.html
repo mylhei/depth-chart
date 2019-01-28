@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -5,11 +6,18 @@
 <title>HTML5 Canvas绘制比特币交易深度图</title>
 <style type="text/css">
 .layout{
+
 	position:relative;	
+	height: 600px;
 }
 
 .layout canvas{
-	position:absolute;	
+	position:absolute;
+}
+.layout .canvas{
+  background: #ffffff;
+  width: 600px;
+  height: 300px
 }
 
 .layout #x{
@@ -21,12 +29,18 @@
 	top:0px;
 	left:600px;	
 }
+.layout #offdepth {
+	top: 0;
+	left: 0;
+	background: inherit;
+}
 </style>
 </head>
 
 <body>
 <div class="layout">
-<canvas id="depth" width="600" height="300"></canvas>
+<canvas id="depth" class="canvas" width="600" height="300"></canvas>
+<canvas id="offdepth" class="canvas" width="600" height="300"></canvas>
 <canvas id="x" width="600" height="24"></canvas>
 <canvas id="y" width="48" height="300"></canvas>
 </div>
@@ -34,6 +48,7 @@
 <script>
 
 function drawDepthChart() {
+
 	var data = {
 		"sell":
 		[
@@ -81,8 +96,84 @@ function drawDepthChart() {
 	}
 	
 	
-	var gap = 10; //X轴偏移量 防止左右两部分连接以利于美观
 	var canvas=document.getElementById('depth');
+	var offCanvas = document.getElementById('offdepth')
+	window.offContext = offCanvas.getContext('2d')
+
+	const buyFillColor = '#09C989'
+	const sellFillColor = '#F24E4D'
+
+	offCanvas.addEventListener('mousemove', ({offsetX, offsetY}) => {
+		for(let key of valueMap.keys()) {
+			const x = key[0]
+			const y = key[1]
+			const side = key[2]
+			const obj = valueMap.get(key)
+
+			if (offsetX < x) {
+				// console.log(key, valueMap.get(key))
+				offContext.strokeStyle = 'rgba(200,200,200,0.5)'
+				offContext.lineWidth = 1
+				offContext.setLineDash([2])
+				offContext.clearRect(0,0,600,300);
+				offContext.beginPath()
+				offContext.moveTo(0, y)
+				offContext.lineTo(600, y)
+				offContext.stroke()
+				offContext.closePath()
+
+				offContext.beginPath()
+				offContext.moveTo(x, 0)
+				offContext.lineTo(x, 300)
+				offContext.stroke()
+				offContext.closePath()
+
+				offContext.beginPath()
+				offContext.shadowBlur=20;
+				offContext.shadowColor="rgba(0,0,0,0.8)";
+				// 小圆点
+				offContext.fillStyle = 'rgba(255,255,255, 1)'
+				offContext.arc(x,y,5,0,2*Math.PI);
+				offContext.fill()
+				offContext.closePath()
+
+				offContext.beginPath()
+				// tips框
+				offContext.fillStyle = 'rgba(255,255,255, 1)'
+				let widthOffset = 120
+				let heightOffset = 60
+				let left = x - widthOffset / 2
+				let top = y - heightOffset - 10
+				if (side === 'sell') {
+					// widthOffset = -widthOffset
+					// heightOffset = -heightOffset
+				}
+				if (left < 0) {
+					left = 0
+				}
+				if (left >= 600 - widthOffset) {
+					left = 600 - widthOffset
+				}
+				if (top <= 0) {
+					top = y + 10
+				}
+				
+				offContext.fillRect(left, top, widthOffset, heightOffset);
+				
+				offContext.fillStyle = side === 'buy' ? buyFillColor : sellFillColor
+				offContext.textAlign="left"
+				offContext.shadowBlur=0;
+				offContext.font="12px Arial";
+				const marginLeft = 10
+				const marginTop = 25
+				const lineHeight = 20
+				offContext.fillText(`委托价：${obj.price}`, left + marginLeft, top + marginTop );
+				offContext.fillText(`累计：${obj.total}`, left + marginLeft, top + marginTop + lineHeight);
+				offContext.closePath()
+				break;
+			}
+		}
+	})
 	var width = canvas.getAttribute('width');
 	var height = canvas.getAttribute('height');
 	
@@ -94,75 +185,103 @@ function drawDepthChart() {
 	//买卖各占一半宽度
 	var scaleW = width / 2 / data['sell'].length;
 	
-	var context=canvas.getContext('2d');	
+	var context=canvas.getContext('2d');
+	window.context = context
+	window.valueMap = new Map
 	
-	//开始一个连续绘制路径
-	context.beginPath();
-	context.fillStyle = '#9dd'; //设置买入区域填充颜色
-	var x = y  = 0;
-	context.moveTo(width/2-gap, height);
-	
-	//从中间向上、向左绘制买单图
-	for(i in data['buy']){
-		x = width/2 - i * scaleW-gap;
-		y = height - data['buy'][i]['total']/maxAmount*height;
-		context.lineTo(x, y);
-	}
-	
-	context.lineTo(0, y); //延伸到最左侧边缘
-	context.lineTo(0, height);
-	context.lineTo(width/2-gap, height);
-	context.fill(); //形成一个封装区域 并按fillStyle指定的颜色填充		
-	context.closePath();
-	
-	//同上 开始绘制卖单深度图
-	context.beginPath();
-	context.fillStyle = '#1aa';
-	context.moveTo(width/2+gap, height);
-	for(i in data['sell']){
-		var index =data['sell'].length - i -1;
+	var draw  = (context, width, height) => {
+		let tempList = []
+      // const width = parseFloat(width) || 0
+      // const height = parseFloat(height) || 0
+      const gap = 10
+      context.beginPath()
+      context.fillStyle = buyFillColor
+      let x = 0
+      let y = 0
+      let maxAmount = Math.max(data['sell'][0]['total'], data['buy'][data['buy'].length - 1]['total'])
+      let scaleH = maxAmount / height
+      let scaleW = width / 2 / data['sell'].length
+      // context.moveTo(width / 2 - gap, height)
+      // 从中间向上、向左绘制买单图
+      for (let i in data['buy']) {
+        x = width / 2 - i * scaleW - gap
+        y = height - data['buy'][i]['total'] / maxAmount * height
+        tempList.push({
+        	x,
+        	y,
+        	value: data['buy'][i],
+        	side: 'buy'
+        })
+        // valueMap.set([x, y], data['buy'][i])
+        context.lineTo(x, y)
+      }
+      context.lineTo(0, y) // 延伸到最左侧边缘
+      context.lineTo(0, height)
+      context.lineTo(width / 2 - gap, height)
+      context.fill() // 形成一个封装区域 并按fillStyle指定的颜色填充
+      context.closePath()
+
+      // 同上 开始绘制卖单深度图
+      context.beginPath()
+      context.fillStyle = sellFillColor
+      // debugger
+      context.moveTo(width / 2 + gap, height)
+      for (let i in data['buy']) {
+        var index =data['sell'].length - i -1;
 		x = width/2 + i * scaleW + gap;
 		y = height - data['sell'][index]['total']/maxAmount * height;
+		tempList.push({
+        	x,
+        	y,
+        	value: data['buy'][i],
+        	side: 'sell'
+        })
 		context.lineTo(x,y);
-	}
-	
-	context.lineTo(width+gap, y);
-	context.lineTo(width+gap, height);
-	context.lineTo(width/2+gap, height);
-	context.fill();	
-	context.closePath();
-	
-	//X轴刻度
-	var contextX = document.getElementById('x').getContext('2d');
-	var contextY = document.getElementById('y').getContext('2d');
-	contextX.fillStyle = '#ccc';
-	contextY.fillStyle = '#ccc';
-	
-	for(i in data['buy']){
-		if(i%3) continue;
-		x = width/2 - i * scaleW-30;
-		y = 12;
-		contextX.fillText(data['buy'][i]['price'], x, y);
-	}
-	
-	for(i in data['sell']){
-		if(i%3) continue;
-		x = width/2 + i * scaleW;
-		y = 12;
-		var index =data['sell'].length - i -1; 
-		contextX.fillText(data['sell'][index]['price'], x, y);
-	}
-	
-	//Y轴5等份
-	var seg = maxAmount/5;
-	for(i=1; i<6; i++){
-		x = 12;
-		y = height - seg*i/maxAmount * height;
-		contextY.fillText(seg*i > 1000 ? (seg*i/1000+'K'): seg*i, x, y);
-	}
-	
-	//这是作者加的版权标识 你可以去掉
-	context.fillText('Powered By: 月影无痕 zhangxugg@163.com', 180, 100);
+      }
+
+      tempList = tempList.sort((a, b) => {
+      	return a.x - b.x
+      })
+      // debugger
+      tempList.forEach(item => {
+      	valueMap.set([item.x, item.y, item.side], item.value)
+      })
+      context.lineTo(width + gap, y)
+      context.lineTo(width + gap, height)
+      context.lineTo(width / 2 + gap, height)
+      context.fill()
+      // context.stroke()
+      context.closePath()
+
+      // X轴刻度
+      let contextX = document.getElementById('x').getContext('2d')
+      let contextY = document.getElementById('y').getContext('2d')
+      contextX.fillStyle = '#000'
+
+      for (let i in data['buy']) {
+        if (i % 3) continue
+        x = width / 2 - i * scaleW - 30
+        y = 12
+        contextX.fillText(data['buy'][i]['price'], x, y)
+      }
+
+      for (let i in data['sell']) {
+        if (i % 3) continue
+        x = width / 2 + i * scaleW
+        y = 12
+        let index = data['sell'].length - i - 1
+        contextX.fillText(data['sell'][index]['price'], x, y)
+      }
+
+      // Y轴5等份
+      var seg = maxAmount / 5
+      for (let i = 1; i < 6; i++) {
+        x = 12
+        y = height - seg * i / maxAmount * height
+        contextY.fillText(seg * i > 1000 ? (seg * i / 1000 + 'K') : seg * i, x, y)
+      }
+    }
+    draw(context, width, height)
 }
 
 
